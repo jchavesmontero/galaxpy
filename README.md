@@ -22,5 +22,5 @@ Some examples of how to run galaxpy are located in the notebooks folder.
 
 IMPORTANT CONSIDERATIONS
 ------------------------
-The permissions of some GALAXev files may have changed after downloading the code. To fix it, run chmod_galaxev.sh.
+The permissions of some GALAXev files may have changed after downloading the code. To fix it, run chmod_galaxev.sh on a terminal.
 
