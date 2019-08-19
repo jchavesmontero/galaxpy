@@ -1,0 +1,55 @@
+================================================================================
+The file nebular_emission_gutkin16.tar.gz in this directory contains the 
+values of some of the most commonly used optical and ultraviolet emission-lines
+predicted by models of nebular emission from star-forming galaxies
+(presented in Gutkin et al. 2016).
+These models have been computed combining the latest version of the stellar
+population synthesis code of Bruzual & Charlot (2003; Charlot & Bruzual, in 
+preparation) with the latest version of the photoionization code CLOUDY 
+(Ferland et al. 2013)
+================================================================================
+
+For further details about the model parameters, please see:
+Gutkin, J., Charlot, S., Bruzual, G. 2016, MNRAS, in press
+(astro-ph/...)
+
+================================================================================
+********************************************************************************
+*********************** DESCRIPTION OF MODEL FILES *****************************
+********************************************************************************
+********************************************************************************
+
+nebular_emission_gutkin16.tar.gz contains 14 files, each corresponding to given
+value of the interstellar gas metallicity Zism, specifically:
+
+Zism= 0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.004, 0.006, 0.008, 0.010, 0.014, 
+0.017, 0.020, 0.030, 0.040
+
+The file names are built as follows:
+nebular_emission_Zaaa.txt, where aaa are the digits after the decimal point of the 
+value of the interstellar gas metallicity, for example: 
+nebular_emission_Z017.txt corresponds to Zism=0.017
+
+Each model file contains 23 columns:
+
+col.1: log(Us), logarithmic value of the ionization parameter
+
+col.2: xid, dust-to-metal mass ratio
+
+col.3: nh, hydrogen gas density (per cubic cm)
+
+col.4: (C/O)/(C/O)sol, carbon-to-oxygen abundance ratio in units of the solar
+value, (C/O)sol=0.44
+
+col.5: mup, upper mass cutoff of the IMF 
+
+cols 6-23: predicted intensities of 18 optical and ultraviolet emission lines 
+(in units of solar bolometric luminosity [3.826E+33] per unit SFR [in Mo/yr]) 
+for constant SFR with a Chabrier (2003) IMF sustained for 10^8 yr, specifically:
+
+[OII]3727 Hbeta [OIII]4959 [OIII]5007 [NII]6548 Halpha [NII]6584 
+[SII]6717 [SII]6731 NV1240 CIV1548 CIV1551 HeII1640 OIII]1661 OIII]1666 
+[SiIII]1883 SiIII]1888 CIII]1908 
+
+Please contact gutkin@iap.fr and charlot@iap.fr if you require
+predictions for other emission lines
