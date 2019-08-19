@@ -24,3 +24,4 @@ IMPORTANT CONSIDERATIONS
 ------------------------
 The permissions of some GALAXev files may have changed after downloading the code. To fix it, run chmod_galaxev.sh on a terminal.
 
+Notebooks not rendering correctly with github can be seen using nbviewer (https://nbviewer.jupyter.org/).
