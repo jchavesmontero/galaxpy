@@ -1,0 +1,4 @@
+!       Array declaration for routines that compute Lick indices
+	character*40 idxlbl
+	real w(6),a(20),b(20),c(3),d(3)
+	common /gwparam/ idxlbl,im,w,a,b,c,d

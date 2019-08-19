@@ -3,16 +3,16 @@ import shutil
 import subprocess
 import glob
 import sys
-import math
 
+import pickle
 import numpy as np
 from scipy.integrate import simps
 
 from natsort import natsorted
 import extinction
-from astropy.cosmology import FlatLambdaCDM
+from astropy import units, constants
 
-from .model_SFH import SFH
+path_program = os.path.dirname( os.path.dirname( os.path.realpath(__file__) ) ) + '/'
 
 class galaxy_sed(object):
 
@@ -24,7 +24,9 @@ class galaxy_sed(object):
                  library_vs = 2003,
                  units = 'flambda',
                  w1lambda = '700',
-                 w2lambda = '20000'):
+                 w2lambda = '20000',
+                 SFH_tt = 0,
+                 SFH_sf = 0):
 
         '''
         metallicity:     Initial metallicity of the galaxy. Options
@@ -58,14 +60,14 @@ class galaxy_sed(object):
 
       # check that all required keys are in params
         required_keys = ['metallicity', 
-                       'IMF', 
-                       'mass_z0', 
-                       'dust', 
-                       'survey_filt',
-                       'flag_mag',
-                       'flag_em_lines',
-                       'flag_IGM_ext',
-                       'seed',]
+                         'IMF',  
+                         'dust', 
+                         'survey_filt',
+                         'flag_mag',
+                         'em_lines',
+                         'flag_IGM_ext',
+                         'cosmo',
+                         'seed',]
 
         for key in required_keys:
             try:
@@ -73,23 +75,25 @@ class galaxy_sed(object):
             except KeyError:
                 raise Exception(key + ' is not defined in params')
 
-        path_one_lvl     = os.path.dirname(os.path.dirname(__file__))
+        path_one_lvl     = os.path.dirname(os.path.dirname(__file__)) + '/'
         self.seed        = params['seed']
-        self.galaxev_dir = path_one_lvl + '/bc03/'
-        self.em_line_dir = path_one_lvl + '/gutkin/'
-        self.work_dir    = path_one_lvl + '/runs/' + self.seed + '/'
+        self.galaxev_dir = path_one_lvl + 'bc03/'
+        self.em_line_dir = path_one_lvl + 'gutkin/'
+        self.work_dir    = path_one_lvl + 'runs/' + params['folder'] + '/'
         self.survey_name = params['survey_filt']
-        self.survey_filt = path_one_lvl + '/filters/' + params['survey_filt'] + '/'
-        self.massz0      = params['mass_z0']
-        self.file_SFH    = path_one_lvl + '/runs/SFHs/' + 'SFH_' + self.seed + '.txt'
+        self.survey_filt = path_one_lvl + 'filters/' + params['survey_filt'] + '/'
+        
+        # self.gal_type    = params['gal_type']
+        
 
         self.metallicity   = params['metallicity']
         self.imf           = params['IMF']
         self.dust          = params['dust']
         self.flag_mag      = params['flag_mag']
-        self.flag_em_lines = params['flag_em_lines']
+        self.em_lines      = params['em_lines']
         self.flag_IGM_ext  = params['flag_IGM_ext']
 
+        self.cosmo       = params['cosmo']
         self.resolution  = resolution
         self.model_name  = model_name
         self.library     = library
@@ -126,14 +130,36 @@ class galaxy_sed(object):
 
         self.csp_output = self.work_dir + self.seed + '_csp_out'
         self.gpl_output = self.work_dir + self.seed + '_gpl_out.dat'
+        self.gpl_output_nd = self.work_dir + self.seed + '_gpl_out_nd.dat'
 
         # select filters old_version
         # self.select_filters()
 
         # export everything that we need to run galaxev
         self.define_env()
-        # compute SFH
-        self.age_SFH, self.SFH = SFH(self.massz0, self.file_SFH)
+
+        if(np.isscalar(SFH_tt)):
+
+          file_SFH    = (path_one_lvl 
+                        + 'runs/SFHs/' 
+                        + 'SFHn_'
+                        + 'gal_type_' 
+                        + params['gal_type']
+                        + '.pkl')
+
+          dict_save =  pickle.load( open( file_SFH, "rb" ) )
+          aa = np.argmin( abs(params['mpeak'] - dict_save['arr_mpeak']) )
+          self.age_SFH = dict_save['arr_tt']
+          self.SFH = dict_save['arr_SFH'][aa,:].flatten()
+        else:
+          self.age_SFH = SFH_tt
+          self.SFH = SFH_sf
+        # st_mass = simps(self.SFH, self.age_SFH)
+        # print( format(st_mass, '.3e') )
+
+        self.file_SFH = self.work_dir + self.seed + '_SFH.txt'
+        np.savetxt(self.file_SFH, 
+                   np.transpose([self.age_SFH, self.SFH]))
 
         # run CSP GALAXEV
         self.run_galaxev_csp()
@@ -167,10 +193,10 @@ class galaxy_sed(object):
             raise Exception( 'Incorrect IMF provided: '+ self.imf +'\n'
                             + 'Please choose from:' + imf_keys )
 
-        # if not os.path.isfile(self.file_SFH):
-            # raise Exception('file_SFH not found at :' 
-                # + str(self.file_SFH) )
-
+        # gal_type_keys = ['sf', 'qs']
+        # if self.gal_type not in gal_type_keys:
+        #     raise Exception( 'Incorrect gal_type provided: '+ self.gal_type +'\n'
+        #                     + 'Please choose from:' + gal_type_keys )
 
         ext_keys = ['N', 'galaxev', 'calzetti', 'fitzpatrick07', 
             'fitzpatrick', 'odonnell', 'cardelli']
@@ -246,6 +272,7 @@ class galaxy_sed(object):
                           + self.galaxev_dir
                           + 'src/SUN_KURUCZ_92.SED;')
 
+
     def run_galaxev_csp(self):
 
         if(self.dust['flag'] == 'galaxev'):
@@ -257,22 +284,19 @@ class galaxy_sed(object):
 
         csp_input = (self.input_ised 
                      + '\n'
-        # dust flags
                      + flag_dust 
                      + '\n'
-        # Compute flux weighted age in the galaxy rest frame at z [0]
                      + '0\n'
-        # read SFH
-                     +'6\n'
-                     + self.file_SFH  
+                     + '6\n'
+                     + self.file_SFH
                      + '\n'
-        #output_name
                      + self.csp_output 
                      + '\n')
-
+        
         csp_input_file = self.work_dir + self.seed + '_csp.in'
         with open(csp_input_file, 'w') as file: 
             file.write(csp_input)
+
 
         call_string = (self.env_string 
                       + self.galaxev_dir 
@@ -285,12 +309,37 @@ class galaxy_sed(object):
                         stdout=open(os.devnull,'w'), 
                         stderr=open(os.devnull,'w'))
 
+        # no dust attenuation
+        if(self.em_lines['flag'] == 'Y'):
+            csp_input = (self.input_ised 
+                         + '\n'
+                         + 'N' 
+                         + '\n'
+                         + '0\n'
+                         + '6\n'
+                         + self.file_SFH
+                         + '\n'
+                         + self.csp_output + '_nd'
+                         + '\n')
+
+            csp_input_file = self.work_dir + self.seed + '_csp.in'
+            with open(csp_input_file, 'w') as file: 
+                file.write(csp_input)
+            call_string   = (self.env_string 
+                          + self.galaxev_dir 
+                          +'src/csp_galaxev < ' 
+                          + csp_input_file)
+
+            subprocess.call(call_string,
+                            cwd = self.work_dir, 
+                            shell=True, 
+                            stdout=open(os.devnull,'w'), 
+                            stderr=open(os.devnull,'w'))
 
 
-    def run_galaxev_gpl(self, zz, H0=67.26, Om0=0.314153):
+    def run_galaxev_gpl(self, zz):
 
-        cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
-        age = np.array(cosmo.age(zz).value)
+        age = np.array(self.cosmo.age(zz).value)
         order = np.argsort(age)
         self.zz = zz[order]
         self.n_zz = len(self.zz)
@@ -317,29 +366,55 @@ class galaxy_sed(object):
                         + gpl_input_file,
                         cwd = self.work_dir, 
                         shell = True, 
+                        # stdout = open(self.work_dir+'aa.txt', 'w'), 
+                        # stderr = open(self.work_dir+'ab.txt', 'w'))
                         stdout = open(os.devnull, 'w'), 
                         stderr = open(os.devnull, 'w'))
+
+        if(self.em_lines['flag'] == 'Y'):
+            gpl_input = (self.csp_output + '_nd'
+                     + '\n'
+                     + ages
+                     + '\n'
+                     + self.w1lambda
+                     + ','
+                     + self.w2lambda
+                     + '\n'
+                     + self.gpl_output_nd)
+
+            gpl_input_file = self.work_dir + self.seed + '_gpl.in'
+            with open(gpl_input_file, 'w') as file: 
+                file.write(gpl_input)
+
+            subprocess.call(self.galaxev_dir
+                            + 'src/galaxevpl < '
+                            + gpl_input_file,
+                            cwd = self.work_dir, 
+                            shell = True, 
+                            stdout = open(os.devnull, 'w'), 
+                            stderr = open(os.devnull, 'w'))
         
         self.read_gpl()
 
 
-    def read_gpl(self, ini_wav=2500, out_wav=12500, H0=67.26, Om0=0.314153):
+    def read_gpl(self, ini_wav=2500, out_wav=12500):
 
         # I want to get F_lambda erg cm^-2 s^-1 A^-1
-        
-        Lsun = 3.826e33 # ergs s^-1
-        # Mpc to cm
-        Mpc2cm = 3.086e24        
-        cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
+        # The code is in Lsun/Angstrom
         
         fil = np.loadtxt(self.gpl_output)
+        # Angstrom
         self.wav_em = fil[:, 0]
         # units Lsun/Angstrom
         self.lum_em = fil[:, 1:]
 
         # Introduce emission lines
-        if(self.flag_em_lines == 'Y'):
-            self.add_emlines()
+        if(self.em_lines['flag'] == 'Y'):
+            fil = np.loadtxt(self.gpl_output_nd)
+            self.dust_att = self.lum_em/fil[:, 1:]
+
+            self.add_emlines(pmetal = self.em_lines['metal_line'],
+                             plogio = self.em_lines['log_io'])
 
         # Apply IGM extinction
         if(self.flag_IGM_ext == 'Y'):
@@ -361,11 +436,11 @@ class galaxy_sed(object):
                                        self.wav_em*(1+self.zz[ii]), 
                                        self.lum_em[:,ii])
 
-                dist_lum = cosmo.luminosity_distance(self.zz[ii]).value #Mpc                
-                num = lum_at_obs * Lsun # units lum erg s^-1 A^-1
-
+                dist_lum = self.cosmo.luminosity_distance(self.zz[ii]).value #Mpc                
+                num = lum_at_obs * units.L_sun.to('erg/s') # units lum erg s^-1 A^-1
+                # BC03 Eq. 8 
                 #dist lum units Mpc -> cm
-                den = 4*math.pi*(dist_lum*Mpc2cm)**2*(1 + self.zz[ii])
+                den = 4 * np.pi * (dist_lum * units.Mpc.to('cm'))**2 * (1 + self.zz[ii])
                 self.flux_obs[:, ii] = num/den                
 
         if( (self.dust['flag'] != 'galaxev') & (self.dust['flag'] != 'N') ):
@@ -383,62 +458,85 @@ class galaxy_sed(object):
         # i1 = dlambda lambda flux_obs * R(lambda)
         # i2 = dlambda lambda C_lambda R(lambda)
 
-        clight = 3.e8 * 1.e10 # A s^-1
+        clight = constants.c.to('Angstrom/s').value # A s^-1
         sysAB_nu = 3.631e-20 # ergs s^-1 cm^-2 Hz^-1
         # F_lambda erg cm^-2 s^-1 A^-1
 
-        self.obs_mag = np.zeros(self.n_filters * self.n_zz).reshape(self.n_filters, self.n_zz)
-        for ii in range(0, self.n_zz): 
-            if(self.zz[ii] > 0):
-                for jj in range(0, self.n_filters):
-                    flux_at_band_wav = np.interp(self.filters['wav_'+str(jj)], 
-                                                 self.wav, 
-                                                 self.flux_obs[:, ii])
-                    yy = (flux_at_band_wav 
-                         * self.filters['wav_'+str(jj)] 
-                         * self.filters['trans_'+str(jj)])
-                    xx = self.filters['wav_'+str(jj)]
-                    num = simps(yy, xx)
+        self.obs_flux = np.zeros( (self.n_filters, self.n_zz) )
+        self.obs_mag = np.zeros( (self.n_filters, self.n_zz) )
 
-                    sysAB_lambda = sysAB_nu * clight / xx**2
-                    yy = ( sysAB_lambda
-                         * self.filters['wav_'+str(jj)]
-                         * self.filters['trans_'+str(jj)])
-                    den = simps(yy, xx)
+        for jj in range(0, self.n_filters):
+          xx = self.filters['wav_'+str(jj)]
+          yy0 = xx * self.filters['trans_'+str(jj)]
 
-                    self.obs_mag[jj, ii] = -2.5 * np.log10(num/den)
+          den_f = simps(yy0, xx)
 
+          sysAB_lambda = sysAB_nu * clight / xx**2
+          yy = sysAB_lambda * yy0
+          den_m = simps(yy, xx)
+
+          for ii in range(0, self.n_zz):
+            if(self.zz[ii] > 0):         
+              flux_at_band_wav = np.interp(self.filters['wav_'+str(jj)], 
+                                           self.wav, 
+                                           self.flux_obs[:, ii])
+                                          
+              yy = flux_at_band_wav * yy0
+              num = simps(yy, xx)
+
+              self.obs_mag[jj, ii] = -2.5 * np.log10(num/den_m)
+              self.obs_flux[jj, ii] = num/den_f
 
 
     # best-fit parameters to SDSS 7 data (0.04<z<0.2)
+    # standard model
     # vary pmetal
     def add_emlines(self, 
                     pmetal = 0.014, 
                     plogio = -3.5,
                     pd2m = 0.3,
                     phden = 100, 
-                    pC20 = 0.38,
+                    pC20 = 1., # C0 solar
                     pIMF = 100):
 
         # Using line ratios from Gutkin et al. 2016
         keys_metal = np.array([0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.004, 
             0.006, 0.008, 0.010, 0.014, 0.017, 0.020, 0.030, 0.040])
-        keys_logio = -(np.arange(7)/2. + 1)
-        keys_dust2metal = np.array([0.1, 0.3, 0.5])
-        keys_C2O = np.array([0.10, 0.14, 0.20, 0.27, 0.38, 0.52, 
-            0.72, 1.00, 1.40])
-        keys_hden = 10.**(np.arange(4) + 1)
-        keys_IMF = np.array([100, 300])
 
-        # ii = np.argmin( float(self.metallicity) - keys_metal )
         ii = np.argmin( abs(pmetal - keys_metal) )
-        frac, _ = math.modf(keys_metal[ii])
+        frac, _ = np.modf(keys_metal[ii])
+        str0 = str(frac)[2:]
+        if(len(str0) < 3):
+          str0 += '0'
+        # very important .4, .1, .05
 
         # col 1 log ionization param
+        # keys_logio = -(np.arange(7)/2. + 1)
+        # -1, -4
+        # plogio = -1
+        # very important .44, .1, .2, .05
+
         # col 2 dust-to-metal ratio
+        # keys_dust2metal = np.array([0.1, 0.3, 0.5])
+        # pd2m = 0.3
+        # important .2, .05
+
         # col 3 hydrogen gas density (per cubic cm)
+        # keys_hden = np.array([100, 1000])
+        # phden = 100
+        # not very important .05, .06
+
         # col 4 C/O ratio in units of solar value
+        # keys_C2O = np.array([0.10, 0.14, 0.20, 0.27, 0.38, 0.52, 
+        #     0.72, 1.00, 1.40])
+        # pC20 = 0.38
+        # not important, less than .05
+
         # col 5 cutoff IMF
+        # keys_IMF = np.array([100, 300])
+        # pIMF = 100
+        # important .24, .14, .1 
+
         # col 6-23:
 
         #[OII]3727 
@@ -463,8 +561,8 @@ class galaxy_sed(object):
         self.line_wav = np.array([3727, 4862, 4959, 5007, 6548, 6564, 
             6584, 6717, 6731, 1240, 1548, 1551, 1640, 1661, 1666,
             1883, 1888, 1908])
-
-        file_in = 'nebular_emission_Z' + str(frac)[2:] + '.txt'
+        
+        file_in = 'nebular_emission_Z' + str0 + '.txt'
         with open(self.em_line_dir + file_in, 'r') as file:
             fil = np.loadtxt(file)
         aa = np.where( (fil[:,0] == plogio) &
@@ -472,32 +570,38 @@ class galaxy_sed(object):
                        (fil[:,2] == phden) &
                        (fil[:,3] == pC20) &
                        (fil[:,4] == pIMF) )
-        # Lsun per unit SFR [Msun/yr]
-        self.line_rat = fil[aa, 5:]
 
+        # Lsun per unit SFR [Msun/yr]
+        self.line_rat = fil[aa, 5:].flatten()
 
         # Lyman alpha 1216
         # Ly alpha to H alpha ratio 8.7 (Hu et al. 1998)
         # From 9.1 to 11.6 Hummer & Storey et al. 1987
         # due to absorption in the position of the line, we have to 
-        # multiply line intensity to really see a line!
+        # multiply the line intensity by a factor of a few to see a line!
         # the problem is that we need to include nebular emission
         # this is for the future
-        lyabs = 1.e3
-        self.line_wav = np.append(self.line_wav, [1216])
-        self.line_rat = np.append(self.line_rat, [self.line_wav[5] * 8.7 * lyabs])
+        # lyabs = 1.e3
+        # self.line_wav = np.append(self.line_wav, [1216])
+        # self.line_rat = np.append(self.line_rat, [self.line_wav[5] * 8.7 * lyabs])
 
+        # number of lines
         nlines = len(self.line_wav)
 
+        # position of lines
+        ind_lines = np.zeros(self.line_wav.shape[0], dtype=int)
+        # account for resolution of the spectrum
+        res_lambda = np.zeros(self.line_wav.shape[0])
+        for jj in range(0, nlines):
+            ind_lines[jj] = np.argmin( abs(self.line_wav[jj] - self.wav_em) )
+            res_lambda[jj] = abs(self.wav_em[ind_lines[jj]] - self.wav_em[ind_lines[jj]+1])
+
+        # introduce lines
         for ii in range(0, self.n_zz):
-            if(self.zz[ii] > 0):
-                ind = np.argmin( abs(self.age_SFH - self.age[ii]) )
-                lum_lines = self.line_rat * self.SFH[ind]
-                for jj in range(0, nlines):
-                    ind = np.argmin( abs(self.line_wav[jj] - self.wav_em) )
-                    #print(self.line_wav[jj], self.wav_em[ind])
-                    #print(np.log10(lum_lines[jj]), np.log10(self.lum_em[ind, ii]) )
-                    self.lum_em[ind, ii] += lum_lines[jj]
+            ind = np.argmin( abs(self.age_SFH - self.age[ii]*1.e9) )
+            lum_lines = self.line_rat * self.SFH[ind]
+            self.lum_em[ind_lines, ii] += lum_lines * self.dust_att[ind_lines, ii] / res_lambda
+
 
         # introduce properly lines only in high resolution spectra 
         # line_width 4 A
@@ -507,7 +611,7 @@ class galaxy_sed(object):
         #     SFR = self.SFH[ind]
         #     lum_lines = self.line_rat * SFR
         #     for jj in range(0, nlines):
-        #         norm = (1./np.sqrt(2*math.pi)/sigma_line) * lum_lines[jj]
+        #         norm = (1./np.sqrt(2*np.pi)/sigma_line) * lum_lines[jj]
         #         line_prof = norm * np.exp(-0.5 * (self.wav_em - self.line_wav[jj])**2 / sigma_line**2)
         #         self.lum_em[:, ii] += line_prof
         
@@ -550,7 +654,7 @@ class galaxy_sed(object):
 
         for ii in range(0, self.n_zz):
 
-            # Barnett et al. 2017 Eq. 2
+            # Barnett et al. 2017 Eq. 1
             if(self.zz[ii] <= 5.5):
                 tauLA = 0.85 * ( (1.+self.zz[ii])/5. )**4.3
             else:
@@ -593,49 +697,47 @@ class galaxy_sed(object):
                     self.dust['Av']), self.flux_obs[:, ii])
 
 
+    # def select_filters_old(self):
+    #     # create new file by appending new filters at the end
+    #     # of filterfrm.res
 
+    #     file_name = 'filterfrm.res'
 
-    def select_filters_old(self):
-        # create new file by appending new filters at the end
-        # of filterfrm.res
+    #     file_all_filt = self.galaxev_dir + 'src/' + file_name
+    #     file_all_filt_temp = self.work_dir + file_name
+    #     if os.path.isfile(file_all_filt):
+    #         shutil.copyfile(file_all_filt, file_all_filt_temp)
+    #     else:
+    #         raise Exception('The file ' + file_all_filt + ' does not exist')
 
-        file_name = 'filterfrm.res'
+    #     filter_files = glob.glob(self.survey_filt + self.survey_name + "*")
+    #     filter_files = natsorted(filter_files)
 
-        file_all_filt = self.galaxev_dir + 'src/' + file_name
-        file_all_filt_temp = self.work_dir + file_name
-        if os.path.isfile(file_all_filt):
-            shutil.copyfile(file_all_filt, file_all_filt_temp)
-        else:
-            raise Exception('The file ' + file_all_filt + ' does not exist')
+    #     with open(file_all_filt_temp, 'a+') as file:
+    #         for tempfile in filter_files:
+    #             with open(tempfile, 'r') as file_temp:
+    #                 tempfile_name_ext = os.path.basename(tempfile)
+    #                 t_name, t_ext = os.path.splitext(tempfile_name_ext)
+    #                 file.write('# ' + t_name + '\n')
+    #                 file.write(file_temp.read())
 
-        filter_files = glob.glob(self.survey_filt + self.survey_name + "*")
-        filter_files = natsorted(filter_files)
+    #     input_string = (file_all_filt_temp 
+    #                     + '\nn\ny\n'
+    #                     + self.galaxev_dir 
+    #                     + 'src/FILTERBIN.RES')
+    #     input_file = self.work_dir + self.seed + '_filt.in'
+    #     with open(input_file, 'w') as file: 
+    #         file.write(input_string)
 
-        with open(file_all_filt_temp, 'a+') as file:
-            for tempfile in filter_files:
-                with open(tempfile, 'r') as file_temp:
-                    tempfile_name_ext = os.path.basename(tempfile)
-                    t_name, t_ext = os.path.splitext(tempfile_name_ext)
-                    file.write('# ' + t_name + '\n')
-                    file.write(file_temp.read())
+    #     subprocess.call(self.galaxev_dir 
+    #                     + 'src/add_filters < ' 
+    #                     + input_file, 
+    #                     cwd = self.work_dir, 
+    #                     shell = True)
 
-        input_string = (file_all_filt_temp 
-                        + '\nn\ny\n'
-                        + self.galaxev_dir 
-                        + 'src/FILTERBIN.RES')
-        input_file = self.work_dir + self.seed + '_filt.in'
-        with open(input_file, 'w') as file: 
-            file.write(input_string)
-
-        subprocess.call(self.galaxev_dir 
-                        + 'src/add_filters < ' 
-                        + input_file, 
-                        cwd = self.work_dir, 
-                        shell = True)
-
-        file_name = 'filters.log'
-        shutil.copyfile(self.work_dir + file_name, 
-                        self.galaxev_dir + 'src/' + file_name)
+    #     file_name = 'filters.log'
+    #     shutil.copyfile(self.work_dir + file_name, 
+    #                     self.galaxev_dir + 'src/' + file_name)
 
 
 

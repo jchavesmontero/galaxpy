@@ -1,0 +1,28 @@
+bin_ised binary to ASCII
+ascii_ised ASCII to binary
+
+galaxevpl extract individual spectra
+
+filters in filterfrm.res
+build_filterbin file to binary (filterbin.res, list in filters.log)
+seefilter to extract response function (numbers in filters.log)
+new filter response functions can be appended to filterfrm.res (two columns, lambda in A and response in second). Before new filter, put #. filter description in the third character of that line.
+
+csp_galaxev computes the spectral evolution of composite stellar populations (eq. 1 BC03). 
+dust according to Charlot & Fall (200). (see \S6 and Eq.6 BC03)
+option 0 (SSP) for the SFH does not produce a convolution. I will produce magnitude and colors through the filters in use (and dust)
+name_sed.f to output colors? do i need this?
+mass normalization to 1 Msun at t=0 (SFR produces 1 solar mass at infinity). everything can be scaled a posteriory
+
+add_bursts combine two bursts of SF (output files as input files). The mas is NOT normalized to 1 Msun
+
+downgrade_resolution only from 3300 to 9300 A (rebin spectra). Do I need this?
+
+cmev compute the redshift dependence of galaxy magnitudes in filters selected by the user from their sequential numbers in filters.log.
+the cosmological model and age of the galaxy today can be specified
+fmag program, zmag example
+
+template directory contains the 30 templates used by Tremonti to fit continua and measure emission line fluxes in SDSS
+
+
+

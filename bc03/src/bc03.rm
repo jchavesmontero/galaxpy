@@ -1,0 +1,7 @@
+# Delete _lr_ lsindx files.
+rm -f /home/jchavesmontero/Proyectos/projects/gen_templates/program/runs/test0/test0_csp.out.?lsindx_ffn
+rm -f /home/jchavesmontero/Proyectos/projects/gen_templates/program/runs/test0/test0_csp.out.?lsindx_sed
+rm -f /home/jchavesmontero/Proyectos/projects/gen_templates/program/runs/test0/test0_csp.out.?lsindx_sed_lick_system
+rm -f /home/jchavesmontero/Proyectos/projects/gen_templates/program/runs/test0/test0_csp.out.8lsindx_sed_fluxes
+# Delete 5color file for non SSP's.
+rm -f /home/jchavesmontero/Proyectos/projects/gen_templates/program/runs/test0/test0_csp.out.5color
