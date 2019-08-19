@@ -1,0 +1,9 @@
+numpy arrays, read using np.load
+
+nsnap: number of snapshots
+nobj: number of galaxies, 1000
+nmass: different halo masses, 4. Their values are 11.5, 12, 12.5, 13 Msun/h for UM and 11.4, 11.8, 12.3, and 12.8 Msun/h for TNG.
+ntype: 0 for star-forming galaxies, 1 for quenched galaxies.
+
+tz (nsnap)
+SFH (nmass, ntype, nobj, nsnap)
