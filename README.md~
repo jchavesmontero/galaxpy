@@ -19,8 +19,10 @@ For each star formation history, Galaxpy provides synthetic SEDs at a set of red
 
 EXAMPLES
 --------
-Some examples of how to run Galaxpy can be found in the notebooks folder.
+Some examples of how to run galaxpy are located in the notebooks folder.
 
 IMPORTANT CONSIDERATIONS
 ------------------------
-The permissions of some GALAXev files may have changed after downloading the code. To fix it, run chmod_galaxev.sh on a terminal. Notebooks not rendering correctly in github can be seen using nbviewer (https://nbviewer.jupyter.org/).
+The permissions of some GALAXev files may have changed after downloading the code. To fix it, run chmod_galaxev.sh on a terminal.
+
+Notebooks not rendering correctly with github can be seen using nbviewer (https://nbviewer.jupyter.org/).
