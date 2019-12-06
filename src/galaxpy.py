@@ -151,7 +151,6 @@ class galaxy_sed(object):
       self.age_SFH = SFH_tt
       self.SFH = SFH_sf
     # st_mass = simps(self.SFH, self.age_SFH)
-    # print( format(st_mass, '.3e') )
 
     self.file_SFH = self.work_dir + self.seed + '_SFH.txt'
     np.savetxt(self.file_SFH, np.transpose([self.age_SFH, self.SFH]))
@@ -426,7 +425,8 @@ class galaxy_sed(object):
       self.lum_em = []
 
     # units Lsun/Angstrom
-    self.lum_em.append(fil[:, 1:])
+    invert_lum = fil[:, 1:]
+    self.lum_em.append(invert_lum[:, ::-1])
 
     # Introduce emission lines
     if(self.em_lines['flag'] == 'Y'):
@@ -447,7 +447,7 @@ class galaxy_sed(object):
       self.igm_ext(it=it)
 
 
-  def lum2fluxmag(self, ini_wav=2500, out_wav=12500):
+  def lum2fluxmag(self, ini_wav=1300, out_wav=110000):
 
     ind = np.where( (self.wav_em >= ini_wav) & (self.wav_em <= out_wav) )[0]
     self.wav = self.wav_em[ind]
@@ -505,8 +505,8 @@ class galaxy_sed(object):
       for ii in range(0, self.n_zz):
         if(self.zz[ii] > 0):     
           flux_at_band_wav = np.interp(self.filters['wav_'+str(jj)], 
-                         self.wav, 
-                         self.flux_obs[:, ii])
+                                       self.wav, 
+                                       self.flux_obs[:, ii])
                         
           yy = flux_at_band_wav * yy0
           num = simps(yy, xx)
