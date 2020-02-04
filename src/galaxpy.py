@@ -365,20 +365,20 @@ class galaxy_sed(object):
 
         # call galaxevpl        
         gpl_input = (infile
-               + '\n'
-               + ages
-               + '\n'
-               + self.w1lambda
-               + ','
-               + self.w2lambda
-               + '\n'
-               + outfile)
+                   + '\n'
+                   + ages
+                   + '\n'
+                   + self.w1lambda
+                   + ','
+                   + self.w2lambda
+                   + '\n'
+                   + outfile)
 
         gpl_input_file = self.work_dir + self.seed + '_gpl.in'
         with open(gpl_input_file, 'w') as file: 
           file.write(gpl_input)
 
-        verbose = 1
+        verbose = 0
         if(verbose == 0):
           subprocess.call(self.galaxev_dir
                   + 'src/galaxevpl < '
@@ -425,8 +425,7 @@ class galaxy_sed(object):
       self.lum_em = []
 
     # units Lsun/Angstrom
-    invert_lum = fil[:, 1:]
-    self.lum_em.append(invert_lum[:, ::-1])
+    self.lum_em.append(fil[:, 1:])
 
     # Introduce emission lines
     if(self.em_lines['flag'] == 'Y'):
@@ -451,7 +450,7 @@ class galaxy_sed(object):
 
     ind = np.where( (self.wav_em >= ini_wav) & (self.wav_em <= out_wav) )[0]
     self.wav = self.wav_em[ind]
-    self.flux_obs = np.zeros((len(self.wav), self.n_zz))    
+    self.obv_sed = np.zeros((len(self.wav), self.n_zz))
     
     # flux_lambda_obs = Lum_lambda_em / (4 pi D_L^2 (1+z))
     for ii in range(0, self.n_zz):
@@ -467,7 +466,7 @@ class galaxy_sed(object):
         # BC03 Eq. 8 
         #dist lum units Mpc -> cm
         den = 4 * np.pi * (dist_lum * units.Mpc.to('cm'))**2 * (1 + self.zz[ii])
-        self.flux_obs[:, ii] = num/den        
+        self.obv_sed[:, ii] = num/den
 
     # apply dust attenuation now if model != galaxev
     if( (self.dust['flag'] != 'galaxev') & (self.dust['flag'] != 'N') ):
@@ -482,7 +481,7 @@ class galaxy_sed(object):
   def compute_obs_mags(self):
 
     # mag = -2.5 * log10 (i1/i2)
-    # i1 = dlambda lambda flux_obs * R(lambda)
+    # i1 = dlambda lambda obv_sed * R(lambda)
     # i2 = dlambda lambda C_lambda R(lambda)
 
     clight = constants.c.to('Angstrom/s').value # A s^-1
@@ -491,6 +490,7 @@ class galaxy_sed(object):
 
     self.obs_flux = np.zeros( (self.n_filters, self.n_zz) )
     self.obs_mag = np.zeros( (self.n_filters, self.n_zz) )
+    self.rest_mag = np.zeros( (self.n_filters, self.n_zz) )
 
     for jj in range(0, self.n_filters):
       xx = self.filters['wav_'+str(jj)]
@@ -503,10 +503,11 @@ class galaxy_sed(object):
       den_m = simps(yy, xx)
 
       for ii in range(0, self.n_zz):
-        if(self.zz[ii] > 0):     
+        if(self.zz[ii] > 0):
+        
           flux_at_band_wav = np.interp(self.filters['wav_'+str(jj)], 
                                        self.wav, 
-                                       self.flux_obs[:, ii])
+                                       self.obv_sed[:, ii])
                         
           yy = flux_at_band_wav * yy0
           num = simps(yy, xx)
@@ -514,6 +515,13 @@ class galaxy_sed(object):
           self.obs_mag[jj, ii] = -2.5 * np.log10(num/den_m)
           self.obs_flux[jj, ii] = num/den_f
 
+          # rest frame mag (for colors, amplitude wrong)
+          flux_at_band_wav = np.interp(self.filters['wav_'+str(jj)], 
+                                       self.wav_em, 
+                                       self.lum_em[:, ii])
+          yy = flux_at_band_wav * yy0
+          num = simps(yy, xx)
+          self.rest_mag[jj, ii] = -2.5 * np.log10(num/den_m)
 
   # best-fit parameters to SDSS 7 data (0.04<z<0.2)
   # standard model
@@ -721,20 +729,20 @@ class galaxy_sed(object):
 
     for ii in range(0, self.n_zz):
       if self.dust['flag'] == 'calzetti':
-        self.flux_obs[:, ii] = extinction.apply(extinction.calzetti00(self.wav, 
-          self.dust['Av'], 4.05), self.flux_obs[:, ii])
+        self.obv_sed[:, ii] = extinction.apply(extinction.calzetti00(self.wav, 
+          self.dust['Av'], 4.05), self.obv_sed[:, ii])
       elif self.dust['flag'] == 'cardelli':
-        self.flux_obs[:, ii] = extinction.apply(extinction.ccm89(self.wav, 
-          self.dust['Av'], 4.05), self.flux_obs[:, ii])
+        self.obv_sed[:, ii] = extinction.apply(extinction.ccm89(self.wav, 
+          self.dust['Av'], 4.05), self.obv_sed[:, ii])
       elif self.dust['flag'] == 'odonnell':
-        self.flux_obs[:, ii] = extinction.apply(extinction.odonnell94(self.wav, 
-          self.dust['Av'], 4.05), self.flux_obs[:, ii])
+        self.obv_sed[:, ii] = extinction.apply(extinction.odonnell94(self.wav, 
+          self.dust['Av'], 4.05), self.obv_sed[:, ii])
       elif self.dust['flag'] == 'fitzpatrick':
-        self.flux_obs[:, ii] = extinction.apply(extinction.fitzpatrick99(self.wav, 
-          self.dust['Av'], 3.1), self.flux_obs[:, ii])
+        self.obv_sed[:, ii] = extinction.apply(extinction.fitzpatrick99(self.wav, 
+          self.dust['Av'], 3.1), self.obv_sed[:, ii])
       elif self.dust['flag'] == 'fitzpatrick07':
-        self.flux_obs[:, ii] = extinction.apply(extinction.fm07(self.wav, 
-          self.dust['Av']), self.flux_obs[:, ii])
+        self.obv_sed[:, ii] = extinction.apply(extinction.fm07(self.wav, 
+          self.dust['Av']), self.obv_sed[:, ii])
 
 
   # def select_filters_old(self):
