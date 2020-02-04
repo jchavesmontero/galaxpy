@@ -283,12 +283,15 @@ class galaxy_sed(object):
       it = 1
 
     for ii in range(it):
-      if((ii == 0) & (self.dust['flag'] == 'galaxev')):
-        flag_dust = ('Y' 
-              + '\n' 
-              + self.dust['tau_V'] 
-              + '\n' 
-              + self.dust['etau_V'])
+      if(ii == 0):
+        if(self.dust['flag'] == 'galaxev'):
+          flag_dust = ('Y' 
+                + '\n' 
+                + self.dust['tau_V'] 
+                + '\n' 
+                + self.dust['etau_V'])
+        else:
+          flag_dust = 'N'
         name_out = self.csp_output
       else:
         flag_dust = 'N'
@@ -406,6 +409,11 @@ class galaxy_sed(object):
     self.n_zz = len(self.zz)
     self.age = np.concatenate(self.age)
     self.lum_em = np.concatenate(self.lum_em, axis=1)
+
+    # apply dust attenuation now if model != galaxev
+    if( (self.dust['flag'] != 'galaxev') & (self.dust['flag'] != 'N') ):
+        self.apply_dust()
+
     self.lum2fluxmag()
 
 
@@ -429,12 +437,13 @@ class galaxy_sed(object):
 
     # Introduce emission lines
     if(self.em_lines['flag'] == 'Y'):
-      if(self.dust['flag'] == 'galxev'):
+      if(self.dust['flag'] == 'galaxev'):
         infile_nd = self.gpl_output + str(it) + '_nd.dat'
         fil_em = np.loadtxt(infile_nd)
         dust_att = fil[:, 1:]/fil_em[:, 1:]
       else:
-        dust_att = 0
+        # multiplicative factor
+        dust_att = 1
 
       self.add_emlines(dust_att = dust_att,
                        it = it,
@@ -468,17 +477,13 @@ class galaxy_sed(object):
         den = 4 * np.pi * (dist_lum * units.Mpc.to('cm'))**2 * (1 + self.zz[ii])
         self.obv_sed[:, ii] = num/den
 
-    # apply dust attenuation now if model != galaxev
-    if( (self.dust['flag'] != 'galaxev') & (self.dust['flag'] != 'N') ):
-      self.apply_dust()
-
     if(self.flag_mag == 'Y'):    
     # read the filters where we are going to compute magnitudes
       self.read_filters()
       self.compute_obs_mags()
 
 
-  def compute_obs_mags(self):
+  def compute_obs_mags(self, rest_frame=False):
 
     # mag = -2.5 * log10 (i1/i2)
     # i1 = dlambda lambda obv_sed * R(lambda)
@@ -490,7 +495,8 @@ class galaxy_sed(object):
 
     self.obs_flux = np.zeros( (self.n_filters, self.n_zz) )
     self.obs_mag = np.zeros( (self.n_filters, self.n_zz) )
-    self.rest_mag = np.zeros( (self.n_filters, self.n_zz) )
+    if(rest_frame == True):
+        self.rest_mag = np.zeros( (self.n_filters, self.n_zz) )
 
     for jj in range(0, self.n_filters):
       xx = self.filters['wav_'+str(jj)]
@@ -515,26 +521,27 @@ class galaxy_sed(object):
           self.obs_mag[jj, ii] = -2.5 * np.log10(num/den_m)
           self.obs_flux[jj, ii] = num/den_f
 
-          # rest frame mag (for colors, amplitude wrong)
-          flux_at_band_wav = np.interp(self.filters['wav_'+str(jj)], 
-                                       self.wav_em, 
-                                       self.lum_em[:, ii])
-          yy = flux_at_band_wav * yy0
-          num = simps(yy, xx)
-          self.rest_mag[jj, ii] = -2.5 * np.log10(num/den_m)
+          if(rest_frame == True):
+              # rest frame mag for color ev. (amplitude wrong)
+              flux_at_band_wav = np.interp(self.filters['wav_'+str(jj)], 
+                                           self.wav_em, 
+                                           self.lum_em[:, ii])
+              yy = flux_at_band_wav * yy0
+              num = simps(yy, xx)
+              self.rest_mag[jj, ii] = -2.5 * np.log10(num/den_m)
 
   # best-fit parameters to SDSS 7 data (0.04<z<0.2)
   # standard model
   # vary pmetal
   def add_emlines(self,
-          it = 0,
-          dust_att = 0,
-          pmetal = 0.014, 
-          plogio = -3.5,
-          pd2m = 0.3,
-          phden = 100, 
-          pC20 = 1., # C0 solar
-          pIMF = 100):
+                  it = 0,
+                  dust_att = 0,
+                  pmetal = 0.014, 
+                  plogio = -3.5,
+                  pd2m = 0.3,
+                  phden = 100, 
+                  pC20 = 1., # C0 solar
+                  pIMF = 100):
 
     # col 1 log ionization param
     # keys_logio = -(np.arange(7)/2. + 1)
@@ -727,22 +734,40 @@ class galaxy_sed(object):
 
     import extinction
 
-    for ii in range(0, self.n_zz):
+    for ii in range(self.n_zz):
       if self.dust['flag'] == 'calzetti':
-        self.obv_sed[:, ii] = extinction.apply(extinction.calzetti00(self.wav, 
-          self.dust['Av'], 4.05), self.obv_sed[:, ii])
+        self.lum_em[:, ii] = extinction.apply(extinction.calzetti00(self.wav_em, 
+          self.dust['Av'], 4.05), self.lum_em[:, ii])
       elif self.dust['flag'] == 'cardelli':
-        self.obv_sed[:, ii] = extinction.apply(extinction.ccm89(self.wav, 
-          self.dust['Av'], 4.05), self.obv_sed[:, ii])
+        self.lum_em[:, ii] = extinction.apply(extinction.ccm89(self.wav_em, 
+          self.dust['Av'], 4.05), self.lum_em[:, ii])
       elif self.dust['flag'] == 'odonnell':
-        self.obv_sed[:, ii] = extinction.apply(extinction.odonnell94(self.wav, 
-          self.dust['Av'], 4.05), self.obv_sed[:, ii])
+        self.lum_em[:, ii] = extinction.apply(extinction.odonnell94(self.wav_em, 
+          self.dust['Av'], 4.05), self.lum_em[:, ii])
       elif self.dust['flag'] == 'fitzpatrick':
-        self.obv_sed[:, ii] = extinction.apply(extinction.fitzpatrick99(self.wav, 
-          self.dust['Av'], 3.1), self.obv_sed[:, ii])
+        self.lum_em[:, ii] = extinction.apply(extinction.fitzpatrick99(self.wav_em, 
+          self.dust['Av'], 3.1), self.lum_em[:, ii])
       elif self.dust['flag'] == 'fitzpatrick07':
-        self.obv_sed[:, ii] = extinction.apply(extinction.fm07(self.wav, 
-          self.dust['Av']), self.obv_sed[:, ii])
+        self.lum_em[:, ii] = extinction.apply(extinction.fm07(self.wav_em, 
+          self.dust['Av']), self.lum_em[:, ii])
+
+
+    # for ii in range(0, self.n_zz):
+    #   if self.dust['flag'] == 'calzetti':
+    #     self.obv_sed[:, ii] = extinction.apply(extinction.calzetti00(self.wav, 
+    #       self.dust['Av'], 4.05), self.obv_sed[:, ii])
+    #   elif self.dust['flag'] == 'cardelli':
+    #     self.obv_sed[:, ii] = extinction.apply(extinction.ccm89(self.wav, 
+    #       self.dust['Av'], 4.05), self.obv_sed[:, ii])
+    #   elif self.dust['flag'] == 'odonnell':
+    #     self.obv_sed[:, ii] = extinction.apply(extinction.odonnell94(self.wav, 
+    #       self.dust['Av'], 4.05), self.obv_sed[:, ii])
+    #   elif self.dust['flag'] == 'fitzpatrick':
+    #     self.obv_sed[:, ii] = extinction.apply(extinction.fitzpatrick99(self.wav, 
+    #       self.dust['Av'], 3.1), self.obv_sed[:, ii])
+    #   elif self.dust['flag'] == 'fitzpatrick07':
+    #     self.obv_sed[:, ii] = extinction.apply(extinction.fm07(self.wav, 
+    #       self.dust['Av']), self.obv_sed[:, ii])
 
 
   # def select_filters_old(self):
